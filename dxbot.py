@@ -5,6 +5,7 @@
 
 #Strip nicks from quotes when saving
 #Create function to connect to a page and get source instead of repeating every time
+#Integrate with pastebin for dumping quotes
 
 #----------------------#
 #TODO--------------TODO#
@@ -13,6 +14,7 @@
 import socket, random, sys, time, string, urllib2, re, HTMLParser, urllib, socket
 import dicewords
 from quotes import *
+from reminders import *
 from time import strftime
 
 #Connection and login information
@@ -29,6 +31,27 @@ read=""
 lastNick = ""
 lastMessage = ""
 names = ""
+
+""" Gets configuration info from a config file """
+def getConfig() :
+	global HOST
+	global PORT
+	global NICK
+	global USERNAME
+	global REALNAME
+	global CHAN
+	global PASS
+	with open('config.txt') as fo:
+		for line in fo:
+			config = line.split(', ')
+			HOST 		= config[0]
+			PORT 		= int(config[1])
+			NICK 		= config[2]
+			USERNAME 	= config[3]
+			REALNAME 	= config[4]
+			CHAN 		= config[5]
+			PASS 		= config[6]
+	fo.close()
 
 """ Connects to the server, identifies, then connects to channel """
 def connect():
@@ -51,6 +74,14 @@ def isInt(s):
 def log(output):
 	time = strftime("%H:%M:%S")
 	print ''.join([time," - ",output,"\r\n"])
+
+def getUrlContents(url):
+	req = urllib2.Request(url)
+	req.add_header('User-Agent', 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-GB; rv:1.9.0.3) Gecko/2008092417 Firefox/3.0.0')
+	response = urllib2.urlopen(req)
+	source = response.read()
+	response.close()
+	return source
 
 """
 Dissects a given message into useful individual parts.
@@ -131,7 +162,7 @@ class BasicCommands:
 			self.mtg()
 		elif self.command == "$say" :
 			self.say()
-		elif self.command == "$commands" :
+		elif self.command == "$commands" or self.command == "$help" :
 			self.commands()
 		elif self.command == "$member" :
 			self.memberquery()
@@ -141,6 +172,8 @@ class BasicCommands:
 			self.dump()
 		elif self.command == "$grab" :
 			self.grab()
+		elif self.command == "$remindme" :
+			self.remindme()
 		elif self.command == "/giphy" :
 			self.giphy()
 		elif self.command == "$stuff" :
@@ -186,7 +219,7 @@ class BasicCommands:
 			irc.send("PRIVMSG %s :$skincode will message you a LoL skincode\r\n" % self.nick)
 			irc.send("PRIVMSG %s :$mtg <card> will link you to a MTG card\r\n" % self.nick)
 			irc.send("PRIVMSG %s :$stuff will print out a random string\r\n" % self.nick)
-			irc.send("PRIVMSG %s :$dump will message you all stored quotes\r\n" % self.nick)
+			# irc.send("PRIVMSG %s :$dump will message you all stored quotes\r\n" % self.nick)
 			irc.send("PRIVMSG %s :$quote will print a random stored quote\r\n" % self.nick)
 			irc.send("PRIVMSG %s :$quote # will print how many quotes are stored\r\n" % self.nick)
 			irc.send("PRIVMSG %s :$quote <#> will print the numbered quote\r\n" % self.nick)
@@ -226,11 +259,7 @@ class BasicCommands:
 			else :
 				#Gatherer always has the same start, so we really only have to worry about the actual card name being in the right format
 				card_url = "http://gatherer.wizards.com/Pages/Card/Details.aspx?name=" + urllib.quote_plus(self.args)
-				req = urllib2.Request(card_url)
-				req.add_header('User-Agent', 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-GB; rv:1.9.0.3) Gecko/2008092417 Firefox/3.0.0')
-				response = urllib2.urlopen(req)
-				source = response.read()
-				response.close()
+				source = getUrlContents(card_url)
 				#This is the element the card name is stored in.. this isn't the best way to do it. But it checks that element, grabs copy and if it isn't a bad match the card must exist
 				match = re.compile('<span id="ctl00_ctl00_ctl00_MainContent_SubContent_SubContentHeader_subtitleDisplay"(?: style="font-size:.+?")?>(.+?)</span>').findall(source)
 				if match != []:
@@ -238,8 +267,6 @@ class BasicCommands:
 					if self.args == None :
 						irc.send("PRIVMSG &s :Provide a card name\r\n", self.nick)
 					else :
-						#Commenting this line out because I don't think it is necessary.. is a duplicate of a line a few up
-						#card_url = "http://gatherer.wizards.com/Pages/Card/Details.aspx?name=" + urllib.quote_plus(self.args)
 						try :
 							#Set title so we can pass it to the shortener later
 							title = self.args
@@ -247,11 +274,7 @@ class BasicCommands:
 							temp2 = self.args
 							#This site is the one that has the spoiler image
 							card_url2 = "http://magiccards.info/query?q=" + urllib.quote_plus(temp2)
-							req = urllib2.Request(card_url2)
-							req.add_header('User-Agent', 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-GB; rv:1.9.0.3) Gecko/2008092417 Firefox/3.0.0')
-							response = urllib2.urlopen(req)
-							source = response.read()
-							response.close()
+							source = getUrlContents(card_url2)
 							#Gets the link to all of the images that are on the page
 							match2 = re.compile('<img src="(.+?).jpg').findall(source)
 							if match != [] and self.args != None:
@@ -285,11 +308,7 @@ class BasicCommands:
 				temp = string.replace(encode, '+', '%2B')
 				#is.gd is the url shortening site we use since it prints out the shortened url in an easy to grab way
 				url = "http://is.gd/create.php?url=" + temp
-				req = urllib2.Request(url)
-				req.add_header('User-Agent', 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-GB; rv:1.9.0.3) Gecko/2008092417 Firefox/3.0.0')
-				response = urllib2.urlopen(req)
-				source = response.read()
-				response.close()
+				source = getUrlContents(url)
 				#This is where the shortened url is actually contained in the page
 				value = re.compile('id="short_url" value="(.+?)"').findall(source)
 
@@ -303,14 +322,7 @@ class BasicCommands:
 								url = "www.google.com/search?q=site:http://tcgplayer.com+" + html_parser.unescape(match.replace("&middot;","|").lower().title()).replace(" ", "+")
 							except :
 								url = "www.google.com/search?q=site:http://tcgplayer.com+" + match.replace(" ", "+")
-							hostnme = url.split('/')[0]
-							rip = socket.gethostbyname(hostnme)
-							url = "http://" + url
-							req = urllib2.Request(url)
-							req.add_header('User-Agent', 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-GB; rv:1.9.0.3) Gecko/2008092417 Firefox/3.0.0')
-							response = urllib2.urlopen(req)
-							src = response.read()
-							response.close()
+							src = getUrlContents(url)
 							#This is where the link to the tcgplayer page for any returned cards are
 							link = re.compile('<h3 class="r"><a href="\/url\?q=(.+?)&amp.+"').findall(src)
 							try :
@@ -401,13 +413,18 @@ class BasicCommands:
 		quotesLength = len(quotesList)
 		#If there are no arguments, all quotes are dumped
 		if self.args == None:
-			for i in range(0, quotesLength):
-				irc.send("PRIVMSG %s : %s - \"%s\"\r\n" % (self.nick, quotesList[i][0].title(), quotesList[i][1]))
+			################################
+			# Dump is temporarily disabled while I integrate pastebin
+			################################
+
+			# for i in range(0, quotesLength):
+			# 	irc.send("PRIVMSG %s : %s - \"%s\"\r\n" % (self.nick, quotesList[i][0].title(), quotesList[i][1]))
 		#The only other option is to print for a user, so do that
 		else:
 			for i in range(0, quotesLength):
 				if quotesList[i][0].lower() == self.args.lower():
-					irc.send("PRIVMSG %s : %s - \"%s\"\r\n" % (self.nick, quotesList[i][0].title(), quotesList[i][1]))
+					irc.send("PRIVMSG %s : #%s %s - \"%s\"\r\n" % (self.nick, str(i + 1), quotesList[i][0].title(), quotesList[i][1]))
+					sleep(0.5)
 
 	""" Saves previous non-command message as a quote """
 	def grab(self) :
@@ -424,8 +441,40 @@ class BasicCommands:
 		else:
 			irc.send("PRIVMSG %s :That is not a valid user.\r\n" % self.channel)
 
+	def remindme(self) :
+		if self.args == None :
+			irc.send("PRIVMSG %s :Invalid format.\r\n" % self.channel)
+		else :
+			split = self.args.split(' ')
+			valid = True
+			if len(split) >= 3 :
+				date = split[0]
+				time = split[1]
+				message = ' '.join(split[2:]).lstrip()
+				if '/' not in date or re.match('\d\d\/\d\d', date, flags=re.IGNORECASE) == None :
+					valid = False
+					irc.send("PRIVMSG %s :Date format is incorrect. It should be mm/dd.\r\n" % self.channel)
+				if ':' not in time or re.match('\d\d:\d\d', time) == None :
+					valid = False
+					irc.send("PRIVMSG %s :Time format is incorrect. It should be hh:mm in 24-hour format.\r\n" % self.channel)
+
+				if valid :
+					dateSplit = date.split('/')
+					timeSplit = time.split(':')
+					if int(dateSplit[0]) > 12 or int(dateSplit[0]) < 1 or int(dateSplit[1]) > 31 or int(dateSplit[1]) < 1 :
+						valid = False
+						irc.send("PRIVMSG %s :Invalid date.\r\n" % self.channel)
+					if int(timeSplit[0]) > 24 or int(timeSplit[0]) < 0 or int(timeSplit[1]) > 59 or int(timeSplit[0]) < 0 :
+						valid = False
+						irc.send("PRIVMSG %s :Invalid time.\r\n" % self.channel)
+				if valid :
+					addReminder(self.nick, date, time, message)
+					irc.send("PRIVMSG %s :Reminder added.\r\n" % self.channel)
+			else :
+				irc.send("PRIVMSG %s :Not enough arguments.\r\n" % self.channel)
+
 isBotTryingToJoin = True
-conter = 0
+counter = 0
 irc = socket.socket()
 connect()
 
@@ -457,6 +506,11 @@ while True:
 			#PING messages from the server require a PONG response or else the user will be timed out after a while
 			if msg.command == "PING" :
 				irc.send("PONG %s\r\n" % (msg.args[0],))
+				reminders = checkReminders()
+				if reminders != False :
+					for reminder in reminders :
+						irc.send("PRIVMSG %s :@%s %s\r\n" % (CHAN, reminder[1], reminder[4]))
+						removeReminder(reminder[0])
 				#This is for the pretty useless reconnect
 				counter = 0
 			#PRIVMSG are general messages to the channel and therefore we should check them for commands

@@ -451,9 +451,20 @@ class BasicCommands:
 				date = split[0]
 				time = split[1]
 				message = ' '.join(split[2:]).lstrip()
-				if '/' not in date or re.match('\d\d\/\d\d', date, flags=re.IGNORECASE) == None :
-					valid = False
-					irc.send("PRIVMSG %s :Date format is incorrect. It should be mm/dd.\r\n" % self.channel)
+				if date == 'tomorrow' :
+					month = strftime('%m')
+					day = int(strftime('%d')) + 1
+					year = strftime('%Y')
+					monthMax = monthrange(int(year), int(month))
+					if day == monthMax :
+						day = 1
+						if month == 12 :
+							month = 1
+					date = str(month) + '/' + str(day)
+				elif '/' not in date or re.match('^\d{2}\/\d{2}\/\d{2}$', date, flags=re.IGNORECASE) == None :
+						valid = False
+						irc.send("PRIVMSG %s :Date format is incorrect. It should be mm/dd/yy.\r\n" % self.channel)
+
 				if ':' not in time or re.match('\d\d:\d\d', time) == None :
 					valid = False
 					irc.send("PRIVMSG %s :Time format is incorrect. It should be hh:mm in 24-hour format.\r\n" % self.channel)
@@ -461,7 +472,7 @@ class BasicCommands:
 				if valid :
 					dateSplit = date.split('/')
 					timeSplit = time.split(':')
-					if int(dateSplit[0]) > 12 or int(dateSplit[0]) < 1 or int(dateSplit[1]) > 31 or int(dateSplit[1]) < 1 :
+					if int(dateSplit[0]) > 12 or int(dateSplit[0]) < 1 or int(dateSplit[1]) > 31 or int(dateSplit[1]) < 1 or int(dateSplit[2]) < 1 :
 						valid = False
 						irc.send("PRIVMSG %s :Invalid date.\r\n" % self.channel)
 					if int(timeSplit[0]) > 24 or int(timeSplit[0]) < 0 or int(timeSplit[1]) > 59 or int(timeSplit[0]) < 0 :
